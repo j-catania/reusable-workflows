@@ -1,0 +1,96 @@
+name: Check and Update Dependencies
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Exécution automatique hebdomadaire (par ex. tous les lundis à 08:00 UTC)
+    - cron: '0 8 * * 1'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-deps:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Detect package manager
+        id: pkg-detect
+        run: |
+          if [ -f "pnpm-lock.yaml" ]; then
+            echo "manager=pnpm" >> "$GITHUB_OUTPUT"
+          elif [ -f "package-lock.json" ]; then
+            echo "manager=npm" >> "$GITHUB_OUTPUT"
+          else
+            echo "Aucun lockfile reconnu (pnpm-lock.yaml ou package-lock.json)." >&2
+            exit 1
+          fi
+
+      - name: Install pnpm
+        if: steps:pkg-detect.outputs.manager == 'pnpm'
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: ${{ steps:pkg-detect.outputs.manager }}
+
+      - name: Install dependencies
+        run: |
+          if [ "${{ steps:pkg-detect.outputs.manager }}" = "pnpm" ]; then
+            pnpm install --frozen-lockfile
+          else
+            npm ci
+          fi
+
+      - name: Initial checks (build, test, lint)
+        run: |
+          if [ "${{ steps:pkg-detect.outputs.manager }}" = "pnpm" ]; then
+            pnpm run --if-present build
+            pnpm run --if-present test
+            pnpm run --if-present lint
+          else
+            npm run build --if-present
+            npm run test --if-present
+            npm run lint --if-present
+          fi
+
+      - name: Update dependencies
+        run: |
+          if [ "${{ steps:pkg-detect.outputs.manager }}" = "pnpm" ]; then
+            pnpm update
+          else
+            npm update
+          fi
+
+      - name: Post-update checks (build, test, lint)
+        run: |
+          if [ "${{ steps:pkg-detect.outputs.manager }}" = "pnpm" ]; then
+            pnpm run --if-present build
+            pnpm run --if-present test
+            pnpm run --if-present lint
+          else
+            npm run build --if-present
+            npm run test --if-present
+            npm run lint --if-present
+          fi
+
+      - name: Create Pull Request if changes detected
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore(deps): update dependencies and lockfile"
+          branch: "automated/dependency-updates"
+          delete-branch: true
+          title: "chore(deps): automated dependencies update"
+          body: |
+            Mise à jour automatique des dépendances réalisée avec succès.
+
+            - Gestionnaire détecté : `${{ steps:pkg-detect.outputs.manager }}`
+            - Scripts validés (`--if-present`) : `build`, `test`, `lint`.
+          assignees: "j-catania"
