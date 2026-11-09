@@ -1,18 +1,39 @@
-name: Check and Update Dependencies
+name: Reusable Dependency Update
 
 on:
-  workflow_dispatch:
-  schedule:
-    # Exécution automatique hebdomadaire (par ex. tous les lundis à 08:00 UTC)
-    - cron: '0 8 * * 1'
-
-permissions:
-  contents: write
-  pull-requests: write
+  workflow_call:
+    inputs:
+      assignee:
+        description: 'Nom d''utilisateur GitHub assigné à la PR'
+        required: false
+        type: string
+        default: 'j-catania'
+      target_branch:
+        description: 'Branche temporaire créée pour la PR'
+        required: false
+        type: string
+        default: 'automated/dependency-updates'
+      node_version:
+        description: 'Version de Node.js à utiliser'
+        required: false
+        type: string
+        default: 'lts/*'
+      pr_title:
+        description: 'Titre de la Pull Request'
+        required: false
+        type: string
+        default: 'chore(deps): automated dependencies update'
+    secrets:
+      workflow_token:
+        description: 'Jeton GitHub optionnel si un PAT avec droits spécifiques est requis'
+        required: false
 
 jobs:
-  update-deps:
+  check-and-update:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
 
     steps:
       - name: Checkout repository
@@ -26,7 +47,7 @@ jobs:
           elif [ -f "package-lock.json" ]; then
             echo "manager=npm" >> "$GITHUB_OUTPUT"
           else
-            echo "Aucun lockfile reconnu (pnpm-lock.yaml ou package-lock.json)." >&2
+            echo "Aucun fichier lock reconnu (pnpm-lock.yaml ou package-lock.json)." >&2
             exit 1
           fi
 
@@ -37,7 +58,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: lts/*
+          node-version: ${{ inputs.node_version }}
           cache: ${{ steps:pkg-detect.outputs.manager }}
 
       - name: Install dependencies
@@ -81,16 +102,4 @@ jobs:
           fi
 
       - name: Create Pull Request if changes detected
-        uses: peter-evans/create-pull-request@v6
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: "chore(deps): update dependencies and lockfile"
-          branch: "automated/dependency-updates"
-          delete-branch: true
-          title: "chore(deps): automated dependencies update"
-          body: |
-            Mise à jour automatique des dépendances réalisée avec succès.
-
-            - Gestionnaire détecté : `${{ steps:pkg-detect.outputs.manager }}`
-            - Scripts validés (`--if-present`) : `build`, `test`, `lint`.
-          assignees: "j-catania"
+        uses: peter
