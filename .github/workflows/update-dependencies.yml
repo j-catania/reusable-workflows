@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       assignee:
-        description: 'Nom d''utilisateur GitHub assigné à la PR'
+        description: "Nom d'utilisateur GitHub assigné à la PR"
         required: false
         type: string
         default: 'j-catania'
@@ -40,7 +40,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Detect package manager
-        id: pkg-detect
+        id: pkg_detect
         run: |
           if [ -f "pnpm-lock.yaml" ]; then
             echo "manager=pnpm" >> "$GITHUB_OUTPUT"
@@ -52,18 +52,18 @@ jobs:
           fi
 
       - name: Install pnpm
-        if: steps:pkg-detect.outputs.manager == 'pnpm'
+        if: steps.pkg_detect.outputs.manager == 'pnpm'
         uses: pnpm/action-setup@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ inputs.node_version }}
-          cache: ${{ steps:pkg-detect.outputs.manager }}
+          cache: ${{ steps.pkg_detect.outputs.manager }}
 
       - name: Install dependencies
         run: |
-          if [ "${{ steps:pkg-detect.outputs.manager }}" = "pnpm" ]; then
+          if [ "${{ steps.pkg_detect.outputs.manager }}" = "pnpm" ]; then
             pnpm install --frozen-lockfile
           else
             npm ci
@@ -71,7 +71,7 @@ jobs:
 
       - name: Initial checks (build, test, lint)
         run: |
-          if [ "${{ steps:pkg-detect.outputs.manager }}" = "pnpm" ]; then
+          if [ "${{ steps.pkg_detect.outputs.manager }}" = "pnpm" ]; then
             pnpm run --if-present build
             pnpm run --if-present test
             pnpm run --if-present lint
@@ -83,7 +83,7 @@ jobs:
 
       - name: Update dependencies
         run: |
-          if [ "${{ steps:pkg-detect.outputs.manager }}" = "pnpm" ]; then
+          if [ "${{ steps.pkg_detect.outputs.manager }}" = "pnpm" ]; then
             pnpm update
           else
             npm update
@@ -91,7 +91,7 @@ jobs:
 
       - name: Post-update checks (build, test, lint)
         run: |
-          if [ "${{ steps:pkg-detect.outputs.manager }}" = "pnpm" ]; then
+          if [ "${{ steps.pkg_detect.outputs.manager }}" = "pnpm" ]; then
             pnpm run --if-present build
             pnpm run --if-present test
             pnpm run --if-present lint
@@ -102,4 +102,16 @@ jobs:
           fi
 
       - name: Create Pull Request if changes detected
-        uses: peter
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.workflow_token || secrets.GITHUB_TOKEN }}
+          commit-message: "chore(deps): update dependencies and lockfile"
+          branch: ${{ inputs.target_branch }}
+          delete-branch: true
+          title: ${{ inputs.pr_title }}
+          body: |
+            Mise à jour automatique des dépendances réalisée via workflow réutilisable.
+
+            - Gestionnaire détecté : `${{ steps.pkg_detect.outputs.manager }}`
+            - Scripts validés (`--if-present`) : `build`, `test`, `lint`.
+          assignees: ${{ inputs.assignee }}
