@@ -37,7 +37,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Detect package manager
         id: pkg_detect
@@ -53,10 +53,10 @@ jobs:
 
       - name: Install pnpm
         if: steps.pkg_detect.outputs.manager == 'pnpm'
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ inputs.node_version }}
           cache: ${{ steps.pkg_detect.outputs.manager }}
@@ -102,7 +102,7 @@ jobs:
           fi
 
       - name: Create Pull Request if changes detected
-        uses: peter-evans/create-pull-request@v6
+        uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.workflow_token || secrets.GITHUB_TOKEN }}
           commit-message: "chore(deps): update dependencies and lockfile"
