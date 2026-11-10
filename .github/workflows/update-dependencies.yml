@@ -81,6 +81,21 @@ jobs:
             npm run lint --if-present
           fi
 
+      - name: Snapshot dependencies before update
+        run: |
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            const deps = { ...pkg.dependencies, ...pkg.devDependencies, ...pkg.optionalDependencies };
+            const snapshot = {};
+            for (const name of Object.keys(deps)) {
+              try {
+                snapshot[name] = JSON.parse(fs.readFileSync('node_modules/' + name + '/package.json', 'utf8')).version;
+              } catch (e) {}
+            }
+            fs.writeFileSync('/tmp/deps-before.json', JSON.stringify(snapshot));
+          "
+
       - name: Update dependencies
         run: |
           if [ "${{ steps.pkg_detect.outputs.manager }}" = "pnpm" ]; then
@@ -101,6 +116,49 @@ jobs:
             npm run lint --if-present
           fi
 
+      - name: Generate PR description
+        run: |
+          node -e "
+            const fs = require('fs');
+            const manager = '${{ steps.pkg_detect.outputs.manager }}';
+            let before = {};
+            try { before = JSON.parse(fs.readFileSync('/tmp/deps-before.json', 'utf8')); } catch (e) {}
+
+            let after = {};
+            try {
+              const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+              const deps = { ...pkg.dependencies, ...pkg.devDependencies, ...pkg.optionalDependencies };
+              for (const name of Object.keys(deps)) {
+                try {
+                  after[name] = JSON.parse(fs.readFileSync('node_modules/' + name + '/package.json', 'utf8')).version;
+                } catch (e) {}
+              }
+            } catch (e) {}
+
+            const updated = [];
+            for (const [name, newVer] of Object.entries(after)) {
+              const oldVer = before[name];
+              if (oldVer && newVer && oldVer !== newVer) {
+                updated.push('| \`' + name + '\` | \`' + oldVer + '\` | \`' + newVer + '\` |');
+              }
+            }
+
+            let body = '### 🤖 Mise à jour automatique des dépendances\n\n';
+            body += '- **Gestionnaire :** \`' + manager + '\`\n';
+            body += '- **Contrôles validés :** \`build\`, \`test\`, \`lint\` (--if-present)\n\n';
+
+            if (updated.length > 0) {
+              body += '### 📦 Paquets mis à jour\n\n';
+              body += '| Paquet | Version précédente | Nouvelle version |\n';
+              body += '| :--- | :--- | :--- |\n';
+              body += updated.join('\n') + '\n';
+            } else {
+              body += '_Mise à jour des dépendances transitives uniquement (lockfile)._\n';
+            }
+
+            fs.writeFileSync('pr-description.md', body);
+          "
+
       - name: Create Pull Request if changes detected
         uses: peter-evans/create-pull-request@v8
         with:
@@ -109,9 +167,5 @@ jobs:
           branch: ${{ inputs.target_branch }}
           delete-branch: true
           title: ${{ inputs.pr_title }}
-          body: |
-            Mise à jour automatique des dépendances réalisée via workflow réutilisable.
-
-            - Gestionnaire détecté : `${{ steps.pkg_detect.outputs.manager }}`
-            - Scripts validés (`--if-present`) : `build`, `test`, `lint`.
+          body-path: pr-description.md
           assignees: ${{ inputs.assignee }}
